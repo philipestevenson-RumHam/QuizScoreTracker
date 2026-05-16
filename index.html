@@ -300,6 +300,40 @@
     .score-row:hover { background: var(--surface2); }
 
     @media (max-width: 500px) { .form-row { flex-wrap: wrap; } .container { padding: 1rem; } .period-tab { font-size: 0.65rem; padding: 0.4rem 0.2rem; } .pm-stats { grid-template-columns: repeat(3,1fr); } }
+
+    /* Admin-only tabs: hidden until unlocked */
+    .tab.admin-tab { display: none; }
+
+    /* Add Daily Score button in tab bar */
+    .tab-add-score {
+      margin-left: auto; align-self: center;
+      padding: 0.38rem 0.85rem; border-radius: 99px;
+      font-size: 0.78rem; font-weight: 800;
+      background: rgba(245,200,0,0.15); color: var(--accent);
+      border: 1.5px solid rgba(245,200,0,0.4); cursor: pointer;
+      transition: all 0.15s; white-space: nowrap; margin-right: 0.25rem;
+      box-shadow: none; font-family: inherit;
+    }
+    .tab-add-score:hover { background: rgba(245,200,0,0.28); border-color: var(--accent); transform: none; box-shadow: none; }
+
+    /* Daily Score Modal */
+    #daily-score-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.75); backdrop-filter: blur(8px);
+      z-index: 500; align-items: center; justify-content: center;
+    }
+    #daily-score-overlay.show { display: flex; }
+    #daily-score-box {
+      background: #1a1400; border: 2px solid var(--accent); border-radius: 20px;
+      padding: 2rem; width: 340px;
+      box-shadow: 0 20px 60px rgba(245,200,0,0.2);
+    }
+    #daily-score-box h3 { margin-bottom: 0.25rem; font-size: 1.1rem; font-weight: 900; color: var(--accent); }
+    #daily-score-box .ds-date { font-size: 0.78rem; color: var(--muted); margin-bottom: 1.4rem; font-weight: 600; }
+    #daily-score-box label { display: block; font-size: 0.75rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 0.35rem; }
+    #daily-score-box select, #daily-score-box input[type="number"] { width: 100%; margin-bottom: 0.85rem; }
+    #ds-error { color: var(--red); font-size: 0.8rem; min-height: 1.1rem; margin-bottom: 0.5rem; font-weight: 700; }
+    .ds-actions { display: flex; gap: 0.5rem; }
   </style>
 </head>
 <body>
@@ -317,9 +351,10 @@
 
   <div class="tabs">
     <div class="tab active" onclick="showTab('leaderboard',this)">🏅 Leaderboard</div>
-    <div class="tab" onclick="requireAuth('scores',this)">✏️ Enter Scores</div>
-    <div class="tab" onclick="requireAuth('history',this)">📅 History</div>
-    <div class="tab" onclick="requireAuth('players',this)">👥 Players</div>
+    <div class="tab admin-tab" onclick="requireAuth('scores',this)">✏️ Enter Scores</div>
+    <div class="tab admin-tab" onclick="requireAuth('history',this)">📅 History</div>
+    <div class="tab admin-tab" onclick="requireAuth('players',this)">👥 Players</div>
+    <button class="tab-add-score" onclick="openDailyScoreModal()">➕ Add My Score</button>
   </div>
 
   <div class="container">
@@ -355,6 +390,16 @@
         <div style="margin-top:1rem">
           <button id="save-btn" onclick="saveScores()">💾 Save Scores</button>
         </div>
+      </div>
+      <div class="card" style="margin-top:1rem">
+        <div class="card-title">Import / Export</div>
+        <div style="display:flex;gap:0.75rem;flex-wrap:wrap;align-items:center">
+          <button class="secondary" onclick="exportScores()">📤 Export CSV</button>
+          <button class="secondary" onclick="document.getElementById('import-file').click()">📥 Import CSV</button>
+          <input type="file" id="import-file" accept=".csv" style="display:none" onchange="importScores(event)"/>
+        </div>
+        <div style="margin-top:0.6rem;font-size:0.8rem;color:var(--muted)">CSV columns: <strong>Player Name, Date (YYYY-MM-DD), Score</strong>. One row per entry. New player names will be created automatically.</div>
+        <div id="import-status" style="margin-top:0.5rem;font-size:0.85rem"></div>
       </div>
     </div>
 
@@ -410,6 +455,23 @@
   </div>
 </div>
 
+<!-- Daily Score Modal -->
+<div id="daily-score-overlay">
+  <div id="daily-score-box">
+    <h3>➕ Add My Score</h3>
+    <div class="ds-date" id="ds-date-label"></div>
+    <label for="ds-player">Player</label>
+    <select id="ds-player"></select>
+    <label for="ds-score">Score</label>
+    <input type="number" id="ds-score" min="0" max="9999" placeholder="Enter score" onkeydown="if(event.key==='Enter') submitDailyScore()" />
+    <div id="ds-error"></div>
+    <div class="ds-actions">
+      <button class="secondary" style="flex:1" onclick="closeDailyScoreModal()">Cancel</button>
+      <button style="flex:1" onclick="submitDailyScore()">✅ Confirm</button>
+    </div>
+  </div>
+</div>
+
 <!-- Password Modal -->
 <div id="pw-overlay">
   <div id="pw-box">
@@ -456,6 +518,7 @@ function submitPassword() {
     document.getElementById('pw-overlay').classList.remove('show');
     document.getElementById('lock-badge').className = 'unlocked';
     document.getElementById('lock-badge').textContent = '🔓 Admin';
+    updateAdminTabVisibility();
     if (pendingTab) { showTab(pendingTab, pendingTabEl); pendingTab = null; pendingTabEl = null; }
   } else {
     document.getElementById('pw-error').textContent = 'Incorrect password, try again.';
@@ -474,11 +537,18 @@ function handleLockClick() {
     isUnlocked = false;
     document.getElementById('lock-badge').className = 'locked';
     document.getElementById('lock-badge').textContent = '🔒 Locked';
+    updateAdminTabVisibility();
     showTab('leaderboard', document.querySelector('.tab'));
     toast('Locked 🔒');
   } else {
     requireAuth(null, null);
   }
+}
+
+function updateAdminTabVisibility() {
+  document.querySelectorAll('.tab.admin-tab').forEach(t => {
+    t.style.display = isUnlocked ? 'block' : 'none';
+  });
 }
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -602,6 +672,104 @@ async function saveScores() {
   btn.disabled = false; btn.textContent = '💾 Save Scores';
   if (error) { toast('Error saving: ' + error.message); return; }
   toast('Scores saved! ✅');
+}
+
+// ── Import / Export ───────────────────────────────────────────────────────────
+async function exportScores() {
+  const { data, error } = await sb.from('scores').select('player_id, date, score').order('date');
+  if (error) { toast('Export error: ' + error.message); return; }
+
+  const rows = [['Player Name', 'Date', 'Score']];
+  (data || []).forEach(s => {
+    const p = players.find(x => x.id === s.player_id);
+    if (p) rows.push([p.name, s.date, s.score]);
+  });
+
+  const csv = rows.map(r => r.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'quiz-scores-' + todayLocal() + '.csv';
+  a.click();
+  toast('Exported ' + (rows.length - 1) + ' scores 📤');
+}
+
+async function importScores(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  event.target.value = '';
+
+  const statusEl = document.getElementById('import-status');
+  statusEl.textContent = '⏳ Importing…';
+  statusEl.style.color = 'var(--muted)';
+
+  const text = await file.text();
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  if (!lines.length) { statusEl.textContent = '⚠️ Empty file.'; return; }
+
+  // Skip header row if present
+  const startIdx = lines[0].toLowerCase().includes('player') ? 1 : 0;
+
+  const upserts = [];
+  const rowErrors = [];
+  const createdPlayers = [];
+
+  for (let i = startIdx; i < lines.length; i++) {
+    const cols = parseCSVLine(lines[i]);
+    if (cols.length < 3) { rowErrors.push('Row ' + (i + 1) + ': expected 3 columns'); continue; }
+    const playerName = cols[0].trim();
+    const date = cols[1].trim();
+    const score = parseFloat(cols[2]);
+    if (!playerName || !date || isNaN(score)) { rowErrors.push('Row ' + (i + 1) + ': invalid data'); continue; }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { rowErrors.push('Row ' + (i + 1) + ': date must be YYYY-MM-DD'); continue; }
+
+    let player = players.find(p => p.name.toLowerCase() === playerName.toLowerCase());
+    if (!player) {
+      const color = COLORS[(players.length) % COLORS.length];
+      const { data: newP, error: pErr } = await sb.from('players').insert({ name: playerName, color }).select().single();
+      if (pErr) { rowErrors.push('Row ' + (i + 1) + ': could not create "' + playerName + '"'); continue; }
+      players.push(newP);
+      createdPlayers.push(newP.name);
+      player = newP;
+    }
+
+    upserts.push({ player_id: player.id, date, score });
+  }
+
+  if (upserts.length) {
+    const { error } = await sb.from('scores').upsert(upserts, { onConflict: 'player_id,date' });
+    if (error) { statusEl.textContent = '❌ Import error: ' + error.message; statusEl.style.color = '#ef4444'; return; }
+  }
+
+  if (createdPlayers.length) renderPlayers();
+  renderScoreForm();
+
+  let msg = '✅ Imported ' + upserts.length + ' score' + (upserts.length !== 1 ? 's' : '');
+  if (createdPlayers.length) msg += ', created ' + createdPlayers.length + ' new player' + (createdPlayers.length !== 1 ? 's' : '') + ' (' + createdPlayers.join(', ') + ')';
+  if (rowErrors.length) msg += '. ⚠️ ' + rowErrors.length + ' row' + (rowErrors.length !== 1 ? 's' : '') + ' skipped.';
+  statusEl.textContent = msg;
+  statusEl.style.color = rowErrors.length ? '#f59e0b' : 'var(--accent)';
+  toast('Import complete ✅');
+}
+
+function parseCSVLine(line) {
+  const result = [];
+  let current = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') {
+      if (inQuotes && line[i + 1] === '"') { current += '"'; i++; }
+      else inQuotes = !inQuotes;
+    } else if (c === ',' && !inQuotes) {
+      result.push(current.trim());
+      current = '';
+    } else {
+      current += c;
+    }
+  }
+  result.push(current.trim());
+  return result;
 }
 
 // ── Leaderboard ───────────────────────────────────────────────────────────────
@@ -922,6 +1090,61 @@ async function openPlayerModal(playerId) {
     </div>
   `;
 }
+
+// ── Daily Score Modal ─────────────────────────────────────────────────────────
+function openDailyScoreModal() {
+  if (!players.length) { toast('No players yet — ask an admin to add some!'); return; }
+  // Populate player dropdown
+  const sel = document.getElementById('ds-player');
+  sel.innerHTML = players.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+  document.getElementById('ds-score').value = '';
+  document.getElementById('ds-error').textContent = '';
+  document.getElementById('ds-date-label').textContent = fmt(todayLocal());
+  document.getElementById('daily-score-overlay').classList.add('show');
+  setTimeout(() => document.getElementById('ds-score').focus(), 50);
+}
+
+function closeDailyScoreModal() {
+  document.getElementById('daily-score-overlay').classList.remove('show');
+}
+
+async function submitDailyScore() {
+  const playerId = document.getElementById('ds-player').value;
+  const scoreVal = document.getElementById('ds-score').value.trim();
+  const errEl = document.getElementById('ds-error');
+  errEl.textContent = '';
+
+  if (scoreVal === '' || isNaN(Number(scoreVal))) {
+    errEl.textContent = 'Please enter a valid score.'; return;
+  }
+  const score = parseFloat(scoreVal);
+  if (score < 0 || score > 9999) {
+    errEl.textContent = 'Score must be between 0 and 9999.'; return;
+  }
+
+  const btn = document.querySelector('#daily-score-box button:last-child');
+  btn.disabled = true; btn.textContent = 'Saving…';
+
+  const today = todayLocal();
+  const { error } = await sb.from('scores').upsert(
+    [{ player_id: playerId, date: today, score }],
+    { onConflict: 'player_id,date' }
+  );
+
+  btn.disabled = false; btn.textContent = '✅ Confirm';
+
+  if (error) { errEl.textContent = 'Error saving score: ' + error.message; return; }
+
+  const playerName = players.find(p => p.id === playerId)?.name || 'Player';
+  closeDailyScoreModal();
+  toast(`${playerName}'s score saved! 🎉`);
+  if (document.getElementById('page-leaderboard').classList.contains('active')) renderLeaderboard();
+}
+
+// Close daily score modal on backdrop click
+document.getElementById('daily-score-overlay').addEventListener('click', function(e) {
+  if (e.target === this) closeDailyScoreModal();
+});
 
 // Close modal on backdrop click
 document.getElementById('player-modal').addEventListener('click', function(e) {
