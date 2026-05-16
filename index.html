@@ -82,6 +82,7 @@
       border-bottom: 2px solid var(--border);
       padding: 0 1.5rem;
       box-shadow: 0 2px 12px rgba(0,0,0,0.4);
+      overflow-x: auto;
     }
     .tab {
       padding: 0.8rem 1.1rem; cursor: pointer;
@@ -299,6 +300,34 @@
     .score-row { display: flex; justify-content: space-between; align-items: center; padding: 0.4rem 0.6rem; border-radius: 8px; font-size: 0.82rem; font-weight: 600; }
     .score-row:hover { background: var(--surface2); }
 
+    /* Inner tabs for Total Points / H2H / Score History */
+    .pm-inner-tabs { display: flex; gap: 0; border-bottom: 2px solid var(--border); margin-bottom: 0.85rem; }
+    .pm-inner-tab {
+      padding: 0.45rem 0.75rem; font-size: 0.72rem; font-weight: 800; text-transform: uppercase;
+      letter-spacing: 0.06em; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent;
+      margin-bottom: -2px; transition: all 0.15s; white-space: nowrap;
+    }
+    .pm-inner-tab:hover { color: var(--accent); }
+    .pm-inner-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .pm-inner-panel { display: none; max-height: 220px; overflow-y: auto; padding-right: 2px; }
+    .pm-inner-panel::-webkit-scrollbar { width: 4px; }
+    .pm-inner-panel::-webkit-scrollbar-track { background: transparent; }
+    .pm-inner-panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    .pm-inner-panel.active { display: block; }
+
+    /* 7-day form grid */
+    .form7-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 0.35rem; }
+    .form7-col { display: flex; flex-direction: column; align-items: center; gap: 0.25rem; }
+    .form7-day { font-size: 0.6rem; color: var(--muted); font-weight: 700; text-transform: uppercase; }
+    .form7-pos { font-size: 0.72rem; font-weight: 900; width: 28px; height: 28px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center; border: 2px solid; }
+    .form7-pos.p1  { background: rgba(245,200,0,0.15); color: var(--gold); border-color: rgba(245,200,0,0.5); }
+    .form7-pos.p2  { background: rgba(99,102,241,0.15); color: #a5b4fc; border-color: rgba(99,102,241,0.4); }
+    .form7-pos.p3  { background: rgba(249,115,22,0.15); color: #fdba74; border-color: rgba(249,115,22,0.4); }
+    .form7-pos.plo { background: rgba(248,113,113,0.12); color: #f87171; border-color: rgba(248,113,113,0.3); }
+    .form7-pos.pno { background: transparent; color: var(--border); border-color: var(--border); border-style: dashed; }
+    .form7-score { font-size: 0.7rem; font-weight: 700; color: var(--text); }
+
     @media (max-width: 500px) { .form-row { flex-wrap: wrap; } .container { padding: 1rem; } .period-tab { font-size: 0.65rem; padding: 0.4rem 0.2rem; } .pm-stats { grid-template-columns: repeat(3,1fr); } }
 
     /* Admin-only tabs: hidden until unlocked */
@@ -306,7 +335,7 @@
 
     /* Add Daily Score button in tab bar */
     .tab-add-score {
-      margin-left: auto; align-self: center;
+      margin-left: auto; align-self: center; flex-shrink: 0;
       padding: 0.38rem 0.85rem; border-radius: 99px;
       font-size: 0.78rem; font-weight: 800;
       background: rgba(245,200,0,0.15); color: var(--accent);
@@ -432,6 +461,11 @@
       <div class="card">
         <div class="card-title">Players (<span id="player-count">0</span>)</div>
         <div id="players-list"><div class="loading"><div class="spinner"></div> Loading…</div></div>
+      </div>
+      <div class="card" style="border:1.5px solid #e53e3e22;">
+        <div class="card-title" style="color:#e53e3e;">⚠️ Danger Zone</div>
+        <p style="font-size:0.85rem;color:#666;margin-bottom:12px;">Permanently deletes all players and every score. This cannot be undone.</p>
+        <button class="secondary danger" onclick="clearAllData()">🗑️ Clear All Data</button>
       </div>
     </div>
 
@@ -611,7 +645,7 @@ function renderPlayers() {
   document.getElementById('player-count').textContent = players.length;
   const list = document.getElementById('players-list');
   if (!players.length) { list.innerHTML = '<div class="empty">No players yet. Add some above!</div>'; return; }
-  list.innerHTML = players.map(p => `
+  list.innerHTML = [...players].sort((a,b) => a.name.localeCompare(b.name)).map(p => `
     <div class="player-item">
       <div class="player-info">
         <div class="player-avatar" style="background:${p.color}20;color:${p.color}">${initials(p.name)}</div>
@@ -620,6 +654,19 @@ function renderPlayers() {
       <button class="secondary sm danger" onclick="deletePlayer('${p.id}')">Remove</button>
     </div>
   `).join('');
+}
+
+async function clearAllData() {
+  if (!confirm('Are you sure you want to delete ALL players and scores?\n\nThis cannot be undone.')) return;
+  if (!confirm('Last chance — this will permanently wipe everything. Continue?')) return;
+  const { error: scoresErr } = await sb.from('scores').delete().neq('player_id', '00000000-0000-0000-0000-000000000000');
+  if (scoresErr) { toast('Error clearing scores: ' + scoresErr.message); return; }
+  const { error: playersErr } = await sb.from('players').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+  if (playersErr) { toast('Error clearing players: ' + playersErr.message); return; }
+  players = [];
+  renderPlayers();
+  renderLeaderboard();
+  toast('All data cleared 🗑️');
 }
 
 // ── Score Entry ───────────────────────────────────────────────────────────────
@@ -643,7 +690,7 @@ async function renderScoreForm() {
   const existing = {};
   (data || []).forEach(s => { existing[s.player_id] = s.score; });
 
-  form.innerHTML = players.map(p => `
+  form.innerHTML = [...players].sort((a,b) => a.name.localeCompare(b.name)).map(p => `
     <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.6rem;">
       <div class="player-avatar" style="background:${p.color}20;color:${p.color};width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.85rem;flex-shrink:0">${initials(p.name)}</div>
       <label style="flex:1;font-size:0.875rem;font-weight:500">${p.name}</label>
@@ -718,10 +765,11 @@ async function importScores(event) {
     const cols = parseCSVLine(lines[i]);
     if (cols.length < 3) { rowErrors.push('Row ' + (i + 1) + ': expected 3 columns'); continue; }
     const playerName = cols[0].trim();
-    const date = cols[1].trim();
+    const rawDate = cols[1].trim();
     const score = parseFloat(cols[2]);
-    if (!playerName || !date || isNaN(score)) { rowErrors.push('Row ' + (i + 1) + ': invalid data'); continue; }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { rowErrors.push('Row ' + (i + 1) + ': date must be YYYY-MM-DD'); continue; }
+    if (!playerName || !rawDate || isNaN(score)) { rowErrors.push('Row ' + (i + 1) + ': invalid data'); continue; }
+    const date = normaliseDate(rawDate);
+    if (!date) { rowErrors.push('Row ' + (i + 1) + ': unrecognised date "' + rawDate + '" — use DD/MM/YYYY or YYYY-MM-DD'); continue; }
 
     let player = players.find(p => p.name.toLowerCase() === playerName.toLowerCase());
     if (!player) {
@@ -750,6 +798,39 @@ async function importScores(event) {
   statusEl.textContent = msg;
   statusEl.style.color = rowErrors.length ? '#f59e0b' : 'var(--accent)';
   toast('Import complete ✅');
+}
+
+// Normalise a date string to YYYY-MM-DD.
+// Accepts: YYYY-MM-DD, DD/MM/YYYY, D/M/YYYY, DD-MM-YYYY, D-M-YYYY
+// Always interprets ambiguous day/month values as UK (day first).
+function normaliseDate(raw) {
+  const s = raw.trim();
+
+  // Already ISO format YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+
+  // DD/MM/YYYY or D/M/YYYY  (slash separator)
+  let m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (m) {
+    const [, dd, mm, yyyy] = m;
+    return `${yyyy}-${mm.padStart(2,'0')}-${dd.padStart(2,'0')}`;
+  }
+
+  // DD-MM-YYYY or D-M-YYYY  (hyphen separator, day first — UK)
+  m = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+  if (m) {
+    const [, dd, mm, yyyy] = m;
+    return `${yyyy}-${mm.padStart(2,'0')}-${dd.padStart(2,'0')}`;
+  }
+
+  // DD.MM.YYYY  (dot separator)
+  m = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  if (m) {
+    const [, dd, mm, yyyy] = m;
+    return `${yyyy}-${mm.padStart(2,'0')}-${dd.padStart(2,'0')}`;
+  }
+
+  return null; // unrecognised
 }
 
 function parseCSVLine(line) {
@@ -971,7 +1052,6 @@ async function openPlayerModal(playerId) {
 
   // Wins / losses / draws (days where this player participated)
   let wins = 0, losses = 0, draws = 0;
-  const recentForm = []; // last 10 days with this player
   const datesPlayed = myScores.map(s => s.date).sort().reverse();
 
   datesPlayed.forEach(date => {
@@ -983,10 +1063,29 @@ async function openPlayerModal(playerId) {
     if (myVal > topOther) wins++;
     else if (myVal === topOther) draws++;
     else losses++;
-    if (recentForm.length < 10) {
-      recentForm.push(myVal > topOther ? 'win' : myVal === topOther ? 'draw' : 'lose');
-    }
   });
+
+  // Last 7 calendar days (fixed window regardless of whether played)
+  const last7 = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    const dateStr = d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate());
+    const dayLabel = d.toLocaleDateString('en-GB', { weekday: 'short' }).slice(0,3);
+    const dayData = byDate[dateStr];
+    if (!dayData || dayData[playerId] === undefined) {
+      last7.push({ dateStr, dayLabel, played: false });
+    } else {
+      const myVal = dayData[playerId];
+      const allVals = Object.values(dayData).sort((a,b) => b-a);
+      // position = rank (1 = highest), handle ties
+      let pos = 1;
+      for (let j = 0; j < allVals.length; j++) {
+        if (myVal < allVals[j]) pos++;
+        else break;
+      }
+      last7.push({ dateStr, dayLabel, played: true, score: myVal, pos, total: allVals.length });
+    }
+  }
 
   // All-time rank
   const playerTotals = {};
@@ -1044,51 +1143,77 @@ async function openPlayerModal(playerId) {
     </div>
 
     <div class="pm-section">
-      <div class="pm-section-title">Recent Form (last ${recentForm.length})</div>
-      <div class="form-dots">
-        ${recentForm.map(r => `<div class="form-dot ${r}" title="${r}">${r==='win'?'W':r==='draw'?'D':'L'}</div>`).join('')}
-        ${recentForm.length === 0 ? '<span style="color:var(--muted);font-size:0.85rem">No results yet</span>' : ''}
+      <div class="pm-section-title">Last 7 Days</div>
+      <div class="form7-grid">
+        ${last7.map(day => {
+          if (!day.played) return `
+            <div class="form7-col">
+              <div class="form7-day">${day.dayLabel}</div>
+              <div class="form7-pos pno">–</div>
+              <div class="form7-score" style="color:var(--border)">—</div>
+            </div>`;
+          const posClass = day.pos === 1 ? 'p1' : day.pos === 2 ? 'p2' : day.pos === 3 ? 'p3' : 'plo';
+          const posLabel = day.pos === 1 ? '1st' : day.pos === 2 ? '2nd' : day.pos === 3 ? '3rd' : `${day.pos}th`;
+          return `
+            <div class="form7-col">
+              <div class="form7-day">${day.dayLabel}</div>
+              <div class="form7-pos ${posClass}">${posLabel}</div>
+              <div class="form7-score">${day.score}</div>
+            </div>`;
+        }).join('')}
       </div>
     </div>
 
     <div class="pm-section">
-      <div class="pm-section-title">Total Points — All Players</div>
-      ${cmpData.map(op => `
-        <div class="cmp-row">
-          <div class="cmp-name ${op.id === playerId ? 'highlight' : ''}">${op.name.split(' ')[0]}</div>
-          <div class="cmp-bar-wrap">
-            <div class="cmp-bar" style="width:${Math.round(op.total/maxTotal*100)}%;background:${op.id===playerId ? op.color : op.color+'88'}"></div>
-          </div>
-          <div class="cmp-val" style="color:${op.id===playerId?'var(--accent)':'var(--muted)'}">${op.total}</div>
-        </div>`).join('')}
-    </div>
+      <div class="pm-inner-tabs">
+        <div class="pm-inner-tab active" onclick="pmTab(this,'pm-panel-cmp')">📊 Total Points</div>
+        ${Object.keys(h2h).length ? `<div class="pm-inner-tab" onclick="pmTab(this,'pm-panel-h2h')">⚔️ Head to Head</div>` : ''}
+        <div class="pm-inner-tab" onclick="pmTab(this,'pm-panel-hist')">📅 Score History</div>
+      </div>
 
-    ${Object.keys(h2h).length ? `
-    <div class="pm-section">
-      <div class="pm-section-title">Head to Head</div>
-      ${Object.values(h2h).map(op => {
-        const total2 = op.w + op.l + op.d;
-        const wPct = Math.round(op.w/total2*100);
-        return `<div class="cmp-row">
-          <div class="cmp-name">${op.name.split(' ')[0]}</div>
-          <div class="cmp-bar-wrap" style="position:relative">
-            <div class="cmp-bar" style="width:${wPct}%;background:${p.color}"></div>
-          </div>
-          <div class="cmp-val" style="color:var(--muted);font-size:0.75rem">${op.w}W ${op.d}D ${op.l}L</div>
-        </div>`;
-      }).join('')}
-    </div>` : ''}
+      <div class="pm-inner-panel active" id="pm-panel-cmp">
+        ${cmpData.map(op => `
+          <div class="cmp-row">
+            <div class="cmp-name ${op.id === playerId ? 'highlight' : ''}">${op.name.split(' ')[0]}</div>
+            <div class="cmp-bar-wrap">
+              <div class="cmp-bar" style="width:${Math.round(op.total/maxTotal*100)}%;background:${op.id===playerId ? op.color : op.color+'88'}"></div>
+            </div>
+            <div class="cmp-val" style="color:${op.id===playerId?'var(--accent)':'var(--muted)'}">${op.total}</div>
+          </div>`).join('')}
+      </div>
 
-    <div class="pm-section">
-      <div class="pm-section-title">Score History</div>
-      ${myScores.slice(0,15).map(s => `
-        <div class="score-row">
-          <span style="color:var(--muted)">${fmt(s.date)}</span>
-          <span style="font-weight:700;color:${s.score === best ? 'var(--gold)' : 'var(--text)'}">${s.score} pts${s.score===best?' ⭐':''}</span>
-        </div>`).join('')}
-      ${myScores.length > 15 ? `<div style="text-align:center;color:var(--muted);font-size:0.8rem;padding-top:0.5rem">+ ${myScores.length-15} more</div>` : ''}
+      ${Object.keys(h2h).length ? `
+      <div class="pm-inner-panel" id="pm-panel-h2h">
+        ${Object.values(h2h).map(op => {
+          const total2 = op.w + op.l + op.d;
+          const wPct = Math.round(op.w/total2*100);
+          return `<div class="cmp-row">
+            <div class="cmp-name">${op.name.split(' ')[0]}</div>
+            <div class="cmp-bar-wrap">
+              <div class="cmp-bar" style="width:${wPct}%;background:${p.color}"></div>
+            </div>
+            <div class="cmp-val" style="color:var(--muted);font-size:0.75rem">${op.w}W ${op.d}D ${op.l}L</div>
+          </div>`;
+        }).join('')}
+      </div>` : ''}
+
+      <div class="pm-inner-panel" id="pm-panel-hist">
+        ${myScores.map(s => `
+          <div class="score-row">
+            <span style="color:var(--muted)">${fmt(s.date)}</span>
+            <span style="font-weight:700;color:${s.score === best ? 'var(--gold)' : 'var(--text)'}">${s.score} pts${s.score===best?' ⭐':''}</span>
+          </div>`).join('')}
+      </div>
     </div>
   `;
+}
+
+// ── Player modal inner tab switcher ───────────────────────────────────────────
+function pmTab(el, panelId) {
+  el.closest('.pm-section').querySelectorAll('.pm-inner-tab').forEach(t => t.classList.remove('active'));
+  el.closest('.pm-section').querySelectorAll('.pm-inner-panel').forEach(p => p.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById(panelId).classList.add('active');
 }
 
 // ── Daily Score Modal ─────────────────────────────────────────────────────────
@@ -1096,7 +1221,7 @@ function openDailyScoreModal() {
   if (!players.length) { toast('No players yet — ask an admin to add some!'); return; }
   // Populate player dropdown
   const sel = document.getElementById('ds-player');
-  sel.innerHTML = players.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+  sel.innerHTML = '<option value="">— Select player —</option>' + [...players].sort((a,b) => a.name.localeCompare(b.name)).map(p => `<option value="${p.id}">${p.name}</option>`).join('');
   document.getElementById('ds-score').value = '';
   document.getElementById('ds-error').textContent = '';
   document.getElementById('ds-date-label').textContent = fmt(todayLocal());
@@ -1114,6 +1239,9 @@ async function submitDailyScore() {
   const errEl = document.getElementById('ds-error');
   errEl.textContent = '';
 
+  if (!playerId) {
+    errEl.textContent = 'Please select a player.'; return;
+  }
   if (scoreVal === '' || isNaN(Number(scoreVal))) {
     errEl.textContent = 'Please enter a valid score.'; return;
   }
