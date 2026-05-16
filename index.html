@@ -501,7 +501,7 @@
     <div id="ds-error"></div>
     <div class="ds-actions">
       <button class="secondary" style="flex:1" onclick="closeDailyScoreModal()">Cancel</button>
-      <button style="flex:1" onclick="submitDailyScore()">✅ Confirm</button>
+      <button id="ds-confirm-btn" style="flex:1" onclick="submitDailyScore()">✅ Confirm</button>
     </div>
   </div>
 </div>
@@ -1250,7 +1250,7 @@ async function submitDailyScore() {
     errEl.textContent = 'Score must be between 0 and 9999.'; return;
   }
 
-  const btn = document.querySelector('#daily-score-box button:last-child');
+  const btn = document.getElementById('ds-confirm-btn');
   btn.disabled = true; btn.textContent = 'Saving…';
 
   const today = todayLocal();
@@ -1259,9 +1259,10 @@ async function submitDailyScore() {
     { onConflict: 'player_id,date' }
   );
 
-  btn.disabled = false; btn.textContent = '✅ Confirm';
-
-  if (error) { errEl.textContent = 'Error saving score: ' + error.message; return; }
+  if (error) {
+    btn.disabled = false; btn.textContent = '✅ Confirm';
+    errEl.textContent = 'Error saving score: ' + error.message; return;
+  }
 
   const playerName = players.find(p => p.id === playerId)?.name || 'Player';
   closeDailyScoreModal();
