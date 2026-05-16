@@ -1255,6 +1255,11 @@ function openDailyScoreModal() {
 
 function closeDailyScoreModal() {
   document.getElementById('daily-score-overlay').classList.remove('show');
+  const btn = document.getElementById('ds-confirm-btn');
+  if (btn) { btn.disabled = false; btn.textContent = '✅ Confirm'; }
+  document.getElementById('ds-player').value = '';
+  document.getElementById('ds-score').value = '';
+  document.getElementById('ds-error').textContent = '';
 }
 
 async function submitDailyScore() {
@@ -1320,6 +1325,9 @@ function showTab(tab, el) {
 
 // ── Share Image Generator ─────────────────────────────────────────────────────
 let shareImagePeriod = 'day';
+let shareCanvasList = [];
+const ROWS_PER_PAGE = 9;
+const SIZE = 1080;
 
 async function generateShareImage(period) {
   shareImagePeriod = period;
@@ -1328,7 +1336,7 @@ async function generateShareImage(period) {
   const origText = btn.textContent;
   btn.disabled = true; btn.textContent = 'Generating…';
 
-  // Fetch scores for the period
+  // Fetch scores
   const range = getDateRange(period);
   let query = sb.from('scores').select('player_id, score, date');
   if (range) query = query.gte('date', range.from).lte('date', range.to);
@@ -1349,64 +1357,6 @@ async function generateShareImage(period) {
 
   if (!ranked.length) { toast('No scores for this period!'); return; }
 
-  // Canvas setup — 1080×1080
-  const SIZE = 1080;
-  const canvas = document.getElementById('share-canvas');
-  canvas.width = SIZE; canvas.height = SIZE;
-  const ctx = canvas.getContext('2d');
-
-  // ── Background gradient
-  const bg = ctx.createLinearGradient(0, 0, SIZE, SIZE);
-  bg.addColorStop(0, '#0d0b00');
-  bg.addColorStop(0.5, '#1f1800');
-  bg.addColorStop(1, '#0d0b00');
-  ctx.fillStyle = bg;
-  ctx.fillRect(0, 0, SIZE, SIZE);
-
-  // Subtle grid pattern
-  ctx.strokeStyle = 'rgba(245,200,0,0.04)';
-  ctx.lineWidth = 1;
-  for (let x = 0; x < SIZE; x += 54) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, SIZE); ctx.stroke(); }
-  for (let y = 0; y < SIZE; y += 54) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(SIZE, y); ctx.stroke(); }
-
-  // ── Header bar
-  const headerH = 170;
-  const hg = ctx.createLinearGradient(0, 0, SIZE, headerH);
-  hg.addColorStop(0, '#1a1200');
-  hg.addColorStop(0.5, '#2d2000');
-  hg.addColorStop(1, '#1a1200');
-  ctx.fillStyle = hg;
-  ctx.fillRect(0, 0, SIZE, headerH);
-
-  // Gold accent line under header
-  const accentGrad = ctx.createLinearGradient(0, 0, SIZE, 0);
-  accentGrad.addColorStop(0, 'transparent');
-  accentGrad.addColorStop(0.2, '#f5c800');
-  accentGrad.addColorStop(0.8, '#f5c800');
-  accentGrad.addColorStop(1, 'transparent');
-  ctx.fillStyle = accentGrad;
-  ctx.fillRect(0, headerH - 3, SIZE, 3);
-
-  // Title text
-  const titles = { day: "Today's Results", week: "This Week's Results", month: "This Month's Results" };
-  const subtitle = range ? range.label : '';
-  ctx.textAlign = 'center';
-  ctx.fillStyle = '#f5c800';
-  ctx.font = '900 62px Nunito, Arial Black, sans-serif';
-  ctx.fillText('🍍 RumHam Quiz', SIZE / 2, 72);
-  ctx.font = '800 44px Nunito, Arial, sans-serif';
-  ctx.fillStyle = '#fff8e0';
-  ctx.fillText(titles[period], SIZE / 2, 122);
-  ctx.font = '700 28px Nunito, Arial, sans-serif';
-  ctx.fillStyle = '#a89a60';
-  ctx.fillText(subtitle, SIZE / 2, 158);
-
-  // ── Leaderboard rows
-  const rowH = 88;
-  const startY = headerH + 18;
-  const pad = 48;
-  const maxRows = Math.min(ranked.length, Math.floor((SIZE - startY - 60) / rowH));
-
   // Assign ranks with tie handling
   let rankNum = 1;
   const rankedWithRank = ranked.map((p, i) => {
@@ -1414,131 +1364,174 @@ async function generateShareImage(period) {
     return { ...p, rank: rankNum };
   });
 
-  const medals = ['🥇', '🥈', '🥉'];
-  const topScore = totals[rankedWithRank[0].id];
+  // Split into pages
+  const totalPages = Math.ceil(rankedWithRank.length / ROWS_PER_PAGE);
+  const titles = { day: "Today's Results", week: "This Week's Results", month: "This Month's Results" };
+  const subtitle = range ? range.label : '';
 
-  for (let i = 0; i < maxRows; i++) {
-    const p = rankedWithRank[i];
-    const y = startY + i * rowH;
-    const isTop3 = p.rank <= 3;
-    const isFirst = p.rank === 1;
+  // Clear previous canvases
+  const container = document.getElementById('share-canvases');
+  container.innerHTML = '';
+  shareCanvasList = [];
 
-    // Row background
-    ctx.save();
-    roundRect(ctx, pad, y + 4, SIZE - pad * 2, rowH - 8, 18);
-    if (isFirst) {
-      const rg = ctx.createLinearGradient(pad, y, SIZE - pad, y);
-      rg.addColorStop(0, 'rgba(245,200,0,0.18)');
-      rg.addColorStop(0.5, 'rgba(245,200,0,0.28)');
-      rg.addColorStop(1, 'rgba(245,200,0,0.18)');
-      ctx.fillStyle = rg;
-    } else {
-      ctx.fillStyle = i % 2 === 0 ? 'rgba(46,37,0,0.85)' : 'rgba(34,28,0,0.85)';
-    }
-    ctx.fill();
+  for (let page = 0; page < totalPages; page++) {
+    const pageRows = rankedWithRank.slice(page * ROWS_PER_PAGE, (page + 1) * ROWS_PER_PAGE);
+    const canvas = document.createElement('canvas');
+    canvas.width = SIZE; canvas.height = SIZE;
+    canvas.style.cssText = 'width:100%;border-radius:12px;border:2px solid #3a3000;display:block;';
+    container.appendChild(canvas);
+    shareCanvasList.push(canvas);
 
-    // Row border for 1st place
-    if (isFirst) {
-      roundRect(ctx, pad, y + 4, SIZE - pad * 2, rowH - 8, 18);
-      ctx.strokeStyle = 'rgba(245,200,0,0.5)';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-    }
-    ctx.restore();
-
-    const cx = pad + 30; // left padding inside row
-    const midY = y + rowH / 2;
-
-    // Rank / medal
-    ctx.textAlign = 'center';
-    ctx.font = isTop3 ? '700 38px serif' : '900 32px Nunito, Arial, sans-serif';
-    ctx.fillStyle = isTop3 ? '#fff' : '#a89a60';
-    ctx.fillText(medals[p.rank - 1] || String(p.rank), cx + 28, midY + 12);
-
-    // Colour avatar circle
-    const avatarX = cx + 86;
-    ctx.beginPath();
-    ctx.arc(avatarX, midY, 30, 0, Math.PI * 2);
-    ctx.fillStyle = p.color + '33';
-    ctx.fill();
-    ctx.strokeStyle = p.color;
-    ctx.lineWidth = 2.5;
-    ctx.stroke();
-    ctx.textAlign = 'center';
-    ctx.font = '900 22px Nunito, Arial, sans-serif';
-    ctx.fillStyle = p.color;
-    ctx.fillText(initials(p.name), avatarX, midY + 8);
-
-    // Player name
-    ctx.textAlign = 'left';
-    ctx.font = isFirst ? '900 38px Nunito, Arial, sans-serif' : '700 34px Nunito, Arial, sans-serif';
-    ctx.fillStyle = isFirst ? '#fff8e0' : '#e8ddb0';
-    ctx.fillText(p.name, cx + 130, midY + 6);
-
-    // Quizzes played
-    ctx.font = '600 22px Nunito, Arial, sans-serif';
-    ctx.fillStyle = '#7a6e40';
-    ctx.fillText(`${played[p.id]} quiz${played[p.id] === 1 ? '' : 'zes'}`, cx + 130, midY + 34);
-
-    // Score — right aligned
-    ctx.textAlign = 'right';
-    ctx.font = '900 42px Nunito, Arial Black, sans-serif';
-    ctx.fillStyle = isFirst ? '#f5c800' : '#c8a800';
-    ctx.fillText(`${totals[p.id]}`, SIZE - pad - 16, midY + 6);
-    ctx.font = '700 22px Nunito, Arial, sans-serif';
-    ctx.fillStyle = '#7a6e40';
-    ctx.fillText('pts', SIZE - pad - 16, midY + 32);
+    drawSharePage(canvas, pageRows, totals, played, titles[period], subtitle, page + 1, totalPages);
   }
 
-  if (ranked.length > maxRows) {
-    ctx.textAlign = 'center';
-    ctx.font = '600 24px Nunito, Arial, sans-serif';
-    ctx.fillStyle = '#5a4e28';
-    ctx.fillText(`+ ${ranked.length - maxRows} more players`, SIZE / 2, startY + maxRows * rowH + 24);
-  }
+  // Download button
+  const dlLabel = totalPages > 1 ? `⬇️ Download All ${totalPages} Images` : '⬇️ Download Image';
+  document.getElementById('share-download-btn').textContent = dlLabel;
 
-  // ── Footer
-  ctx.fillStyle = 'rgba(245,200,0,0.15)';
-  ctx.fillRect(0, SIZE - 52, SIZE, 52);
-  const fg = ctx.createLinearGradient(0, 0, SIZE, 0);
-  fg.addColorStop(0, 'transparent');
-  fg.addColorStop(0.2, '#f5c800');
-  fg.addColorStop(0.8, '#f5c800');
-  fg.addColorStop(1, 'transparent');
-  ctx.fillStyle = fg;
-  ctx.fillRect(0, SIZE - 52, SIZE, 2);
-  ctx.textAlign = 'center';
-  ctx.font = '700 24px Nunito, Arial, sans-serif';
-  ctx.fillStyle = '#a89a60';
-  ctx.fillText('🍍 RumHam Quiz Night', SIZE / 2, SIZE - 18);
+  const previewLabel = totalPages > 1
+    ? `Preview — ${rankedWithRank.length} players across ${totalPages} images`
+    : `Preview — ${rankedWithRank.length} player${rankedWithRank.length !== 1 ? 's' : ''}`;
+  document.getElementById('share-preview-label').textContent = previewLabel;
 
-  // Show preview and download button
   document.getElementById('share-preview').style.display = 'block';
   document.getElementById('share-preview').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
+function drawSharePage(canvas, rows, totals, played, title, subtitle, pageNum, totalPages) {
+  const ctx = canvas.getContext('2d');
+  const pad = 48;
+  const headerH = totalPages > 1 ? 155 : 165;
+  const footerH = 56;
+  const rowH = Math.floor((SIZE - headerH - footerH - 24) / ROWS_PER_PAGE);
+
+  // Background
+  const bg = ctx.createLinearGradient(0, 0, SIZE, SIZE);
+  bg.addColorStop(0, '#0d0b00'); bg.addColorStop(0.5, '#1c1500'); bg.addColorStop(1, '#0d0b00');
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, SIZE, SIZE);
+
+  // Grid
+  ctx.strokeStyle = 'rgba(245,200,0,0.035)'; ctx.lineWidth = 1;
+  for (let x = 0; x < SIZE; x += 54) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,SIZE); ctx.stroke(); }
+  for (let y = 0; y < SIZE; y += 54) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(SIZE,y); ctx.stroke(); }
+
+  // Header bg
+  const hg = ctx.createLinearGradient(0, 0, SIZE, 0);
+  hg.addColorStop(0, '#1a1200'); hg.addColorStop(0.5, '#2d2000'); hg.addColorStop(1, '#1a1200');
+  ctx.fillStyle = hg; ctx.fillRect(0, 0, SIZE, headerH);
+
+  // Gold line under header
+  const ag = ctx.createLinearGradient(0, 0, SIZE, 0);
+  ag.addColorStop(0, 'transparent'); ag.addColorStop(0.15, '#f5c800');
+  ag.addColorStop(0.85, '#f5c800'); ag.addColorStop(1, 'transparent');
+  ctx.fillStyle = ag; ctx.fillRect(0, headerH - 3, SIZE, 3);
+
+  // Header text
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#f5c800';
+  ctx.font = '900 56px Arial Black, sans-serif';
+  ctx.fillText('Quiz Tracker', SIZE / 2, 62);
+  ctx.font = '800 42px Arial, sans-serif';
+  ctx.fillStyle = '#fff8e0';
+  ctx.fillText(title, SIZE / 2, 110);
+  ctx.font = '700 26px Arial, sans-serif';
+  ctx.fillStyle = '#a89a60';
+  const subLine = totalPages > 1 ? `${subtitle}   •   Part ${pageNum} of ${totalPages}` : subtitle;
+  ctx.fillText(subLine, SIZE / 2, 145);
+
+  // Rows
+  const medals = ['🥇','🥈','🥉'];
+  const startY = headerH + 12;
+
+  for (let i = 0; i < rows.length; i++) {
+    const p = rows[i];
+    const y = startY + i * rowH;
+    const isFirst = p.rank === 1 && pageNum === 1;
+    const isTop3 = p.rank <= 3 && pageNum === 1;
+    const midY = y + rowH / 2;
+
+    // Row bg
+    ctx.save();
+    roundRect(ctx, pad, y + 4, SIZE - pad*2, rowH - 8, 16);
+    if (isFirst) {
+      const rg = ctx.createLinearGradient(pad, y, SIZE-pad, y);
+      rg.addColorStop(0,'rgba(245,200,0,0.16)'); rg.addColorStop(0.5,'rgba(245,200,0,0.26)'); rg.addColorStop(1,'rgba(245,200,0,0.16)');
+      ctx.fillStyle = rg;
+    } else {
+      ctx.fillStyle = i % 2 === 0 ? 'rgba(42,34,0,0.9)' : 'rgba(30,24,0,0.9)';
+    }
+    ctx.fill();
+    if (isFirst) {
+      roundRect(ctx, pad, y + 4, SIZE - pad*2, rowH - 8, 16);
+      ctx.strokeStyle = 'rgba(245,200,0,0.45)'; ctx.lineWidth = 2; ctx.stroke();
+    }
+    ctx.restore();
+
+    const cx = pad + 22;
+
+    // Rank
+    if (isTop3) {
+      ctx.font = '700 34px serif'; ctx.fillStyle = '#fff'; ctx.textAlign = 'center';
+      ctx.fillText(medals[p.rank-1], cx + 26, midY + 11);
+    } else {
+      ctx.font = '900 28px Arial, sans-serif'; ctx.fillStyle = '#7a6e40'; ctx.textAlign = 'center';
+      ctx.fillText(String(p.rank), cx + 26, midY + 10);
+    }
+
+    // Avatar
+    const ax = cx + 76;
+    ctx.beginPath(); ctx.arc(ax, midY, 28, 0, Math.PI*2);
+    ctx.fillStyle = p.color + '33'; ctx.fill();
+    ctx.strokeStyle = p.color; ctx.lineWidth = 2.5; ctx.stroke();
+    ctx.font = '900 20px Arial, sans-serif'; ctx.fillStyle = p.color; ctx.textAlign = 'center';
+    ctx.fillText(initials(p.name), ax, midY + 7);
+
+    // Name
+    ctx.textAlign = 'left';
+    ctx.font = isFirst ? '900 36px Arial, sans-serif' : '700 32px Arial, sans-serif';
+    ctx.fillStyle = isFirst ? '#fff8e0' : '#e8ddb0';
+    ctx.fillText(p.name, cx + 118, midY + 5);
+
+    // Quizzes
+    ctx.font = '600 20px Arial, sans-serif'; ctx.fillStyle = '#6a5e30';
+    ctx.fillText(`${played[p.id]} quiz${played[p.id]===1?'':'zes'}`, cx + 118, midY + 30);
+
+    // Score
+    ctx.textAlign = 'right';
+    ctx.font = '900 40px Arial Black, sans-serif';
+    ctx.fillStyle = isFirst ? '#f5c800' : '#c8a800';
+    ctx.fillText(String(totals[p.id]), SIZE - pad - 14, midY + 4);
+    ctx.font = '700 20px Arial, sans-serif'; ctx.fillStyle = '#7a6e40';
+    ctx.fillText('pts', SIZE - pad - 14, midY + 28);
+  }
+
+  // Footer
+  ctx.fillStyle = 'rgba(245,200,0,0.12)'; ctx.fillRect(0, SIZE - footerH, SIZE, footerH);
+  ctx.fillStyle = ag; ctx.fillRect(0, SIZE - footerH, SIZE, 2);
+  ctx.textAlign = 'center'; ctx.font = '700 22px Arial, sans-serif'; ctx.fillStyle = '#8a7a40';
+  ctx.fillText('Quiz Tracker  •  quiztracker.app', SIZE/2, SIZE - 18);
+}
+
 function roundRect(ctx, x, y, w, h, r) {
   ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + w - r, y);
-  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-  ctx.lineTo(x + w, y + h - r);
-  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-  ctx.lineTo(x + r, y + h);
-  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-  ctx.lineTo(x, y + r);
-  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.moveTo(x+r, y); ctx.lineTo(x+w-r, y); ctx.quadraticCurveTo(x+w, y, x+w, y+r);
+  ctx.lineTo(x+w, y+h-r); ctx.quadraticCurveTo(x+w, y+h, x+w-r, y+h);
+  ctx.lineTo(x+r, y+h); ctx.quadraticCurveTo(x, y+h, x, y+h-r);
+  ctx.lineTo(x, y+r); ctx.quadraticCurveTo(x, y, x+r, y);
   ctx.closePath();
 }
 
-function downloadShareImage() {
-  const canvas = document.getElementById('share-canvas');
+function downloadAllShareImages() {
+  if (!shareCanvasList.length) { toast('Generate images first!'); return; }
   const periodLabel = { day: 'today', week: 'this-week', month: 'this-month' }[shareImagePeriod];
-  const a = document.createElement('a');
-  a.href = canvas.toDataURL('image/png');
-  a.download = `rumham-quiz-${periodLabel}-${todayLocal()}.png`;
-  a.click();
-  toast('Image downloaded! 📸');
+  shareCanvasList.forEach((canvas, i) => {
+    const a = document.createElement('a');
+    a.href = canvas.toDataURL('image/png');
+    const suffix = shareCanvasList.length > 1 ? `-part${i+1}` : '';
+    a.download = `quiz-tracker-${periodLabel}-${todayLocal()}${suffix}.png`;
+    a.click();
+  });
+  toast(`${shareCanvasList.length} image${shareCanvasList.length>1?'s':''} downloaded! 📸`);
 }
 </script>
 </body>
