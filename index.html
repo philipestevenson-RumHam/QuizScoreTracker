@@ -504,7 +504,18 @@ button {
 .lb-score { font-size: 1.3rem; font-weight: 800; color: var(--sq-gold); }
 .lb-empty { text-align: center; color: var(--sq-text-muted); font-size: 1rem; padding: 40px 0; }
 .lb-loading { text-align: center; color: var(--sq-text-muted); font-size: 1rem; padding: 40px 0; }
-.lb-footer { text-align: center; }
+.lb-footer { text-align: center; display: flex; flex-direction: column; gap: 8px; }
+.lb-stats-btn {
+  display: block; width: 100%; padding: 12px;
+  border-radius: 8px;
+  background: var(--sq-gold);
+  color: #1a1a2e;
+  font-size: 1.1rem; font-weight: 700;
+  text-decoration: none; text-align: center;
+  font-family: 'Nunito', Arial, sans-serif;
+  box-sizing: border-box;
+}
+.lb-stats-btn:hover { opacity: 0.85; }
 .lb-close-btn {
   width: 100%; padding: 12px;
   border-radius: 8px;
@@ -607,6 +618,7 @@ button {
     </div>
     <div class="lb-list" id="lbList"><div class="lb-loading">Loading…</div></div>
     <div class="lb-footer">
+      <a class="lb-stats-btn" href="Scores (RumHam).html">📊 Stats</a>
       <button class="lb-close-btn" id="lbCloseBtn">Close</button>
     </div>
   </div>
@@ -1182,7 +1194,7 @@ button {
   function dateAddDays(dateStr, days) {
     const d = new Date(dateStr + 'T00:00:00');
     d.setDate(d.getDate() + days);
-    return d.toISOString().slice(0,10);
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
   }
 
   // Leaderboard state - lives outside openLeaderboard so nav buttons keep working
